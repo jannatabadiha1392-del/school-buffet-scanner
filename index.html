@@ -1,0 +1,345 @@
+
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>اسکن کارت دانش‌آموز | بوفه مدرسه</title>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Tahoma, Arial, sans-serif;
+      background: linear-gradient(135deg, #10243e, #176b87);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 460px;
+      background: #fff;
+      color: #243447;
+      border-radius: 22px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 15px 45px rgba(0,0,0,.25);
+    }
+
+    h2 {
+      margin: 5px 0 10px;
+      color: #123b59;
+    }
+
+    .subtitle {
+      color: #718096;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+
+    #reader {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 2px solid #dce6ee;
+      min-height: 100px;
+    }
+
+    button {
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      padding: 15px;
+      margin-top: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .start {
+      background: #087f5b;
+      color: white;
+    }
+
+    .stop {
+      background: #d94848;
+      color: white;
+    }
+
+    .send {
+      background: #1769aa;
+      color: white;
+    }
+
+    .manual {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      border: 1px solid #cbd5e0;
+      border-radius: 10px;
+      font-size: 17px;
+      text-align: center;
+      direction: ltr;
+      margin-top: 10px;
+    }
+
+    #status {
+      background: #edf2f7;
+      color: #334155;
+      padding: 12px;
+      border-radius: 10px;
+      margin-top: 15px;
+      font-size: 13px;
+      line-height: 1.9;
+    }
+
+    .footer {
+      margin-top: 18px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <h2>📷 اسکن کارت دانش‌آموز</h2>
+
+  <div class="subtitle">
+    دوربین را فعال کنید و بارکد یا QR کارت دانش‌آموز را مقابل دوربین بگیرید.
+  </div>
+
+  <div id="reader"></div>
+
+  <button class="start" id="startBtn" onclick="startScanner()">
+    شروع اسکن دوربین
+  </button>
+
+  <button class="stop" onclick="stopScanner()">
+    توقف دوربین
+  </button>
+
+  <div class="manual">
+    <strong>ورود دستی کد دانش‌آموز</strong>
+
+    <input
+      type="text"
+      id="manualCode"
+      placeholder="کد دانش‌آموز"
+      autocomplete="off"
+    >
+
+    <button class="send" onclick="sendManualCode()">
+      تأیید و ارسال کد
+    </button>
+  </div>
+
+  <div id="status">
+    آماده اسکن هستیم.
+  </div>
+
+  <div class="footer">
+    سامانه کیف پول هوشمند بوفه مدرسه شهید اسحاقی
+  </div>
+
+</div>
+
+
+<script>
+
+let scanner = null;
+let scanning = false;
+let sending = false;
+
+
+function showStatus(message) {
+  document.getElementById("status").innerText = message;
+}
+
+
+async function startScanner() {
+
+  if (scanning) return;
+
+  if (!window.isSecureContext) {
+    showStatus("خطا: صفحه باید با HTTPS باز شود.");
+    return;
+  }
+
+  if (!navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia) {
+    showStatus("مرورگر شما از دسترسی دوربین پشتیبانی نمی‌کند.");
+    return;
+  }
+
+  try {
+
+    showStatus("در حال آماده‌سازی دوربین...");
+
+    scanner = new Html5Qrcode("reader");
+
+    const cameras = await Html5Qrcode.getCameras();
+
+    if (!cameras || cameras.length === 0) {
+      throw new Error("هیچ دوربینی پیدا نشد.");
+    }
+
+    let cameraId = cameras[0].id;
+
+    const backCamera = cameras.find(c =>
+      /back|rear|environment|پشت|عقب/i.test(c.label)
+    );
+
+    if (backCamera) {
+      cameraId = backCamera.id;
+    }
+
+    await scanner.start(
+      cameraId,
+      {
+        fps: 10,
+        qrbox: {
+          width: 250,
+          height: 250
+        },
+        aspectRatio: 1
+      },
+      decodedText => {
+
+        if (sending) return;
+
+        sending = true;
+
+        const code = String(decodedText).trim();
+
+        stopScanner();
+
+        sendCode(code);
+      },
+      errorMessage => {
+        // خطاهای معمول هنگام جست‌وجوی QR نادیده گرفته می‌شوند.
+      }
+    );
+
+    scanning = true;
+
+    showStatus("دوربین فعال است. کارت را مقابل دوربین بگیرید.");
+
+  } catch (error) {
+
+    scanning = false;
+
+    let message = error.message || String(error);
+
+    if (error.name === "NotAllowedError") {
+      message = "دسترسی دوربین رد شده است. مجوز دوربین مرورگر را بررسی کنید.";
+    }
+
+    if (error.name === "NotFoundError") {
+      message = "دوربینی روی دستگاه پیدا نشد.";
+    }
+
+    if (error.name === "NotReadableError") {
+      message = "دوربین توسط برنامه دیگری در حال استفاده است.";
+    }
+
+    showStatus("خطا در فعال‌سازی دوربین: " + message);
+
+  }
+}
+
+
+async function stopScanner() {
+
+  if (!scanner) return;
+
+  try {
+
+    if (scanning) {
+      await scanner.stop();
+    }
+
+    await scanner.clear();
+
+  } catch (error) {
+    console.log(error);
+  }
+
+  scanning = false;
+  scanner = null;
+}
+
+
+function sendManualCode() {
+
+  const code = document
+    .getElementById("manualCode")
+    .value.trim();
+
+  if (!code) {
+    showStatus("ابتدا کد دانش‌آموز را وارد کنید.");
+    return;
+  }
+
+  sendCode(code);
+}
+
+
+function sendCode(code) {
+
+  code = String(code || "").trim();
+
+  if (!code) {
+    showStatus("کد معتبر نیست.");
+    sending = false;
+    return;
+  }
+
+  if (!window.opener || window.opener.closed) {
+
+    showStatus(
+      "صفحه اصلی سامانه باز نیست. اسکنر را از داخل پنل مسئول بوفه باز کنید."
+    );
+
+    sending = false;
+    return;
+  }
+
+  showStatus("کد شناسایی شد. در حال ارسال به سامانه...");
+
+  window.opener.postMessage(
+    {
+      type: "BUFFET_QR_SCANNED",
+      code: code
+    },
+    "*"
+  );
+
+  showStatus("کد ارسال شد. این پنجره را می‌توانید ببندید.");
+
+  setTimeout(() => {
+    window.close();
+  }, 1200);
+}
+
+</script>
+
+</body>
+</html>
