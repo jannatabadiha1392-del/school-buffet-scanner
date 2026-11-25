@@ -9,9 +9,7 @@
   <script src="https://unpkg.com/html5-qrcode"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -45,6 +43,7 @@
       color: #718096;
       font-size: 13px;
       margin-bottom: 20px;
+      line-height: 1.8;
     }
 
     #reader {
@@ -69,6 +68,7 @@
     .start {
       background: #087f5b;
       color: white;
+      display: none;
     }
 
     .stop {
@@ -123,13 +123,14 @@
   <h2>📷 اسکن کارت دانش‌آموز</h2>
 
   <div class="subtitle">
-    دوربین را فعال کنید و بارکد یا QR کارت دانش‌آموز را مقابل دوربین بگیرید.
+    دوربین به‌صورت خودکار فعال می‌شود.
+    کارت دانش‌آموز را مقابل دوربین بگیرید.
   </div>
 
   <div id="reader"></div>
 
   <button class="start" id="startBtn" onclick="startScanner()">
-    شروع اسکن دوربین
+    تلاش مجدد برای بازکردن دوربین
   </button>
 
   <button class="stop" onclick="stopScanner()">
@@ -152,7 +153,7 @@
   </div>
 
   <div id="status">
-    آماده اسکن هستیم.
+    در حال آماده‌سازی دوربین...
   </div>
 
   <div class="footer">
@@ -161,37 +162,53 @@
 
 </div>
 
-
 <script>
 
 let scanner = null;
 let scanning = false;
+let starting = false;
 let sending = false;
-
 
 function showStatus(message) {
   document.getElementById("status").innerText = message;
 }
 
-
 async function startScanner() {
 
-  if (scanning) return;
+  if (scanning || starting || sending) return;
 
   if (!window.isSecureContext) {
     showStatus("خطا: صفحه باید با HTTPS باز شود.");
+    document.getElementById("startBtn").style.display = "block";
     return;
   }
 
   if (!navigator.mediaDevices ||
       !navigator.mediaDevices.getUserMedia) {
-    showStatus("مرورگر شما از دسترسی دوربین پشتیبانی نمی‌کند.");
+    showStatus("مرورگر از دسترسی دوربین پشتیبانی نمی‌کند.");
+    document.getElementById("startBtn").style.display = "block";
     return;
   }
 
+  if (typeof Html5Qrcode === "undefined") {
+    showStatus("کتابخانه اسکنر بارگذاری نشده است. اتصال اینترنت را بررسی کنید.");
+    document.getElementById("startBtn").style.display = "block";
+    return;
+  }
+
+  starting = true;
+  document.getElementById("startBtn").style.display = "none";
+
   try {
 
-    showStatus("در حال آماده‌سازی دوربین...");
+    showStatus("در حال فعال‌سازی خودکار دوربین...");
+
+    if (scanner) {
+      try {
+        await scanner.clear();
+      } catch(e) {}
+      scanner = null;
+    }
 
     scanner = new Html5Qrcode("reader");
 
@@ -221,7 +238,8 @@ async function startScanner() {
         },
         aspectRatio: 1
       },
-      decodedText => {
+
+      async decodedText => {
 
         if (sending) return;
 
@@ -229,27 +247,38 @@ async function startScanner() {
 
         const code = String(decodedText).trim();
 
-        stopScanner();
+        showStatus("کد شناسایی شد. در حال ارسال...");
+
+        await stopScanner();
 
         sendCode(code);
       },
+
       errorMessage => {
-        // خطاهای معمول هنگام جست‌وجوی QR نادیده گرفته می‌شوند.
+        // خطاهای عادی هنگام جست‌وجوی QR نادیده گرفته می‌شوند.
       }
     );
 
     scanning = true;
 
-    showStatus("دوربین فعال است. کارت را مقابل دوربین بگیرید.");
+    showStatus("دوربین فعال است. کارت دانش‌آموز را مقابل دوربین بگیرید.");
 
   } catch (error) {
 
     scanning = false;
 
+    if (scanner) {
+      try {
+        await scanner.clear();
+      } catch(e) {}
+      scanner = null;
+    }
+
     let message = error.message || String(error);
 
-    if (error.name === "NotAllowedError") {
-      message = "دسترسی دوربین رد شده است. مجوز دوربین مرورگر را بررسی کنید.";
+    if (error.name === "NotAllowedError" ||
+        error.name === "PermissionDeniedError") {
+      message = "دسترسی دوربین رد شده است. مجوز دوربین مرورگر را فعال کنید.";
     }
 
     if (error.name === "NotFoundError") {
@@ -262,30 +291,33 @@ async function startScanner() {
 
     showStatus("خطا در فعال‌سازی دوربین: " + message);
 
+    document.getElementById("startBtn").style.display = "block";
+
+  } finally {
+    starting = false;
   }
 }
-
 
 async function stopScanner() {
 
-  if (!scanner) return;
-
-  try {
-
-    if (scanning) {
-      await scanner.stop();
-    }
-
-    await scanner.clear();
-
-  } catch (error) {
-    console.log(error);
+  if (!scanner) {
+    scanning = false;
+    return;
   }
+
+  const currentScanner = scanner;
 
   scanning = false;
   scanner = null;
-}
 
+  try {
+    await currentScanner.stop();
+  } catch(e) {}
+
+  try {
+    await currentScanner.clear();
+  } catch(e) {}
+}
 
 function sendManualCode() {
 
@@ -300,7 +332,6 @@ function sendManualCode() {
 
   sendCode(code);
 }
-
 
 function sendCode(code) {
 
@@ -322,7 +353,7 @@ function sendCode(code) {
     return;
   }
 
-  showStatus("کد شناسایی شد. در حال ارسال به سامانه...");
+  showStatus("کد در حال ارسال به سامانه...");
 
   window.opener.postMessage(
     {
@@ -338,6 +369,15 @@ function sendCode(code) {
     window.close();
   }, 1200);
 }
+
+// فعال‌سازی خودکار دوربین پس از بازشدن صفحه
+window.addEventListener("load", function() {
+
+  setTimeout(function() {
+    startScanner();
+  }, 700);
+
+});
 
 </script>
 
